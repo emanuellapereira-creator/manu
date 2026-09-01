@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo de Damas Multiplayer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #1e1e2e;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Menu */
+        .card {
+            background: #2b2b3d;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            text-align: center;
+            width: 320px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #f5c2e7;
+        }
+
+        button {
+            background-color: #89b4fa;
+            color: #11111b;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #b4befe;
+        }
+
+        /* HUD do Jogo */
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            width: 480px;
+            background: #2b2b3d;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .player-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .timer {
+            font-size: 20px;
+            font-weight: bold;
+            font-family: monospace;
+            color: #a6e3a1;
+        }
+
+        .active-turn {
+            border-bottom: 3px solid #f5c2e7;
+        }
+
+        /* Tabuleiro */
+        #board {
+            width: 480px;
+            height: 480px;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            border: 4px solid #45475a;
+            border-radius: 4px;
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .cell.white {
+            background-color: #cdd6f4;
+        }
+
+        .cell.black {
+            background-color: #45475a;
+        }
+
+        .cell.highlight {
+            background-color: #a6e3a1 !important;
+            cursor: pointer;
+        }
+
+        /* Peças */
+        .piece {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+
+        .piece.red {
+            background-color: #f38ba8;
+            border: 2px solid #e64553;
+        }
+
+        .piece.black-piece {
+            background-color: #11111b;
+            border: 2px solid #313244;
+            color: white;
+        }
+
+        .piece.selected {
+            transform: scale(1.15);
+            outline: 3px solid #f9e2af;
+        }
+
+        .piece.king::after {
+            content: "👑";
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="menu-screen" class="screen">
+        <div class="card">
+            <h1>Damas Local</h1>
+            <p style="margin-bottom: 20px; color: #a6adc8;">Modo Multiplayer no mesmo dispositivo (2 Jogadores)</p>
+            <button onclick="startGame()">Jogar Agora</button>
+        </div>
+    </div>
+
+    <div id="game-screen" class="screen hidden">
+        <div class="hud">
+            <div id="p1-hud" class="player-info active-turn">
+                <span>Jogador 1 (Vermelho)</span>
+                <span id="timer-red" class="timer">03:00</span>
+            </div>
+            <div id="p2-hud" class="player-info">
+                <span>Jogador 2 (Preto)</span>
+                <span id="timer-black" class="timer">03:00</span>
+            </div>
+        </div>
+
+        <div id="board"></div>
+
+        <button onclick="backToMenu()" style="width: auto;">Voltar ao Menu</button>
+    </div>
+
+    <script>
+        const BOARD_SIZE = 8;
+        const INITIAL_TIME = 180; // 3 minutos por jogador
+
+        let boardState = [];
+        let currentPlayer = 'red'; // 'red' começa
+        let selectedPiece = null;
+        let validMoves = [];
+        
+        let timers = { red: INITIAL_TIME, black: INITIAL_TIME };
+        let timerInterval = null;
+
+        const boardElement = document.getElementById('board');
+        const menuScreen = document.getElementById('menu-screen');
+        const gameScreen = document.getElementById('game-screen');
+
+        function startGame() {
+            menuScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            
+            timers = { red: INITIAL_TIME, black: INITIAL_TIME };
+            currentPlayer = 'red';
+            selectedPiece = null;
+            
+            updateTimerDisplay();
+            initBoard();
+            renderBoard();
+            startTimer();
+            updateHUD();
+        }
+
+        function backToMenu() {
+            clearInterval(timerInterval);
+            gameScreen.classList.add('hidden');
+            menuScreen.classList.remove('hidden');
+        }
+
+        function initBoard() {
+            boardState = Array(8).fill(null).map(() => Array(8).fill(null));
+            
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if ((r + c) % 2 !== 0) {
+                        if (r < 3) {
+                            boardState[r][c] = { player: 'black', isKing: false };
+                        } else if (r > 4) {
+                            boardState[r][c] = { player: 'red', isKing: false };
+                        }
+                    }
+                }
+            }
+        }
+
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = `cell ${(r + c) % 2 === 0 ? 'white' : 'black'}`;
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+
+                    // Destacar movimentos válidos
+                    if (validMoves.some(m => m.r === r && m.c === c)) {
+                        cell.classList.add('highlight');
+                        cell.addEventListener('click', () => makeMove(r, c));
+                    }
+
+                    const pieceData = boardState[r][c];
+                    if (pieceData) {
+                        const piece = document.createElement('div');
+                        piece.className = `piece ${pieceData.player === 'red' ? 'red' : 'black-piece'}`;
+                        if (pieceData.isKing) piece.classList.add('king');
+                        
+                        if (selectedPiece && selectedPiece.r === r && selectedPiece.c === c) {
+                            piece.classList.add('selected');
+                        }
+
+                        piece.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            selectPiece(r, c);
+                        });
+
+                        cell.appendChild(piece);
+                    }
+
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        function selectPiece(r, c) {
+            const piece = boardState[r][c];
+            if (!piece || piece.player !== currentPlayer) return;
+
+            selectedPiece = { r, c };
+            calculateValidMoves(r, c);
+            renderBoard();
+        }
+
+        function calculateValidMoves(r, c) {
+            validMoves = [];
+            const piece = boardState[r][c];
+            if (!piece) return;
+
+            const directions = [];
+            if (piece.player === 'red' || piece.isKing) directions.push([-1, -1], [-1, 1]);
+            if (piece.player === 'black' || piece.isKing) directions.push([1, -1], [1, 1]);
+
+            directions.forEach(([dr, dc]) => {
+                const nr = r + dr;
+                const nc = c + dc;
+
+                if (isInBounds(nr, nc)) {
+                    // Movimento simples
+                    if (!boardState[nr][nc]) {
+                        validMoves.push({ r: nr, c: nc, capture: null });
+                    } 
+                    // Captura
+                    else if (boardState[nr][nc].player !== piece.player) {
+                        const jumpR = nr + dr;
+                        const jumpC = nc + dc;
+                        if (isInBounds(jumpR, jumpC) && !boardState[jumpR][jumpC]) {
+                            validMoves.push({ r: jumpR, c: jumpC, capture: { r: nr, c: nc } });
+                        }
+                    }
+                }
+            });
+        }
+
+        function isInBounds(r, c) {
+            return r >= 0 && r < 8 && c >= 0 && c < 8;
+        }
+
+        function makeMove(toR, toC) {
+            const move = validMoves.find(m => m.r === toR && m.c === toC);
+            if (!move || !selectedPiece) return;
+
+            const { r: fromR, c: fromC } = selectedPiece;
+            const piece = boardState[fromR][fromC];
+
+            // Mover peça
+            boardState[toR][toC] = piece;
+            boardState[fromR][fromC] = null;
+
+            // Remover peça capturada
+            if (move.capture) {
+                boardState[move.capture.r][move.capture.c] = null;
+            }
+
+            // Promover a Dama
+            if ((piece.player === 'red' && toR === 0) || (piece.player === 'black' && toR === 7)) {
+                piece.isKing = true;
+            }
+
+            // Resetar seleção e alternar turno
+            selectedPiece = null;
+            validMoves = [];
+            
+            if (checkGameOver()) return;
+
+            switchTurn();
+            renderBoard();
+        }
+
+        function switchTurn() {
+            currentPlayer = currentPlayer === 'red' ? 'black' : 'red';
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById('p1-hud').classList.toggle('active-turn', currentPlayer === 'red');
+            document.getElementById('p2-hud').classList.toggle('active-turn', currentPlayer === 'black');
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timers[currentPlayer]--;
+                updateTimerDisplay();
+
+                if (timers[currentPlayer] <= 0) {
+                    clearInterval(timerInterval);
+                    const winner = currentPlayer === 'red' ? 'Preto' : 'Vermelho';
+                    alert(`O tempo acabou! Jogador ${winner} venceu!`);
+                    backToMenu();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            document.getElementById('timer-red').textContent = formatTime(timers.red);
+            document.getElementById('timer-black').textContent = formatTime(timers.black);
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const secs = (seconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
+
+        function checkGameOver() {
+            let redPieces = 0;
+            let blackPieces = 0;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (boardState[r][c]?.player === 'red') redPieces++;
+                    if (boardState[r][c]?.player === 'black') blackPieces++;
+                }
+            }
+
+            if (redPieces === 0) {
+                endGame("Jogador 2 (Preto) venceu!");
+                return true;
+            }
+            if (blackPieces === 0) {
+                endGame("Jogador 1 (Vermelho) venceu!");
+                return true;
+            }
+            return false;
+        }
+
+        function endGame(message) {
+            clearInterval(timerInterval);
+            setTimeout(() => {
+                alert(message);
+                backToMenu();
+            }, 100);
+        }
+    </script>
+</body>
+</html>
